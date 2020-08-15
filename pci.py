@@ -1,3 +1,4 @@
+#!/usr/bin/python3
 from collections import UserDict
 import os
 import glob
@@ -63,7 +64,7 @@ class PCIDevice(UserDict):
         # the device number, PCI device function
         keys = ['class',
                 # PCI class (ascii, ro)
-                'config',
+                # 'config',
                 # PCI config space (binary, rw)
                 'device',
                 # PCI device (ascii, ro)
@@ -89,7 +90,10 @@ class PCIDevice(UserDict):
                 # PCI subsystem vendor (ascii, ro)
                 'vendor',
                 # PCI vendor (ascii, ro)
-                'modalias'
+                'modalias',
+                'max_link_speed',
+                # GT/s
+                'max_link_width'
                 ]
         for k in keys:
             self.__setitem__(k, self.read_attr(k))
@@ -104,11 +108,31 @@ class PCIDevice(UserDict):
                                  )
         self.modules = self.find_modules()
         self.dev_type_name, self.dev_type = self.get_dev_type()
-        # TODO:
-        # get sub device net，storage
+        self.devices = self.get_dev()
 
     def __getattr__(self, item):
         return self.get(item, '')
+
+    def get_dev(self):
+        dev_pats = {
+            '01': ['ata[0-9]/host[0-9]/target[0-9]:[0-9]:[0-9]/[0-9]:[0-9]:[0-9]:[0-9]/block/*'],
+            '02': ['net/*'],
+            '0c': ['usb*', 'i2c*'],
+            '06': ['INT*/firmware_node', 'PNP*/firmware_node']
+        }
+        devices = []
+        for dt in self.dev_type:
+            dev_pat = dev_pats.get(dt, None)
+            if dev_pat is not None:
+                for pat in dev_pat:
+                    interface_path = os.path.join(self._prefix, self.dev_path, pat)
+                    for i in glob.glob(interface_path):
+                        if os.path.islink(i):
+                            i = os.readlink(i)
+                        device = os.path.split(i)[-1]
+                        if device not in devices:
+                            devices.append(device)
+        return devices
 
     def get_dev_type(self):
         types = {
@@ -145,7 +169,7 @@ class PCIDevice(UserDict):
         for t in range(0, class_type.__len__(), 2):
             type_num = class_type[t:t+2]
             dev_type = types.get(type_num, '')
-            if dev_type != '':
+            if dev_type != '' and dev_type not in dev_type_name:
                 dev_type_name.append(dev_type)
                 dev_types.append(type_num)
         return dev_type_name, dev_types
@@ -184,7 +208,7 @@ class PCIDevice(UserDict):
         else:
             path = os.path.join(path, name)
         if not os.path.exists(path):
-            return '0'
+            return ''
         with open(path, 'rb')as fp:
             attr = fp.readline().strip()
             try:
@@ -194,16 +218,19 @@ class PCIDevice(UserDict):
         return attr
 
     def __repr__(self):
-        return '<PCIDevice {} {}' \
+        return '<PCIDevice {} {} {} {}' \
                '\n\t{}: {} {} {} (rev {})' \
                '\n\tsubsystem: {} {} {}' \
                '\n\tenable :{}' \
                '\n\tirq: {}' \
                '\n\tcpu: {} ' \
+               '\n\tdevice: {}' \
                '\n\tdriver: {} ' \
                '\n\tmodules: {}' \
             .format(self.__getitem__('class'),
                     self.dev_type_name,
+                    self.max_link_speed,
+                    self.max_link_width,
                     self.dev_path,
                     self.vendor,
                     self.device,
@@ -214,6 +241,7 @@ class PCIDevice(UserDict):
                     self.enable,
                     self.irq,
                     self.local_cpus,
+                    self.devices,
                     self.driver,
                     self.modules)
 
