@@ -22,12 +22,10 @@ class USBInfo:
     usb_classes = {}
     _instance = None
 
-    def __init__(self):
-        USBInfo.parse_usb_ids()
-
     def __new__(cls, *args, **kwargs):
         if not getattr(cls, '_instance'):
             cls._instance = super(USBInfo, cls).__new__(cls, *args, **kwargs)
+            cls.parse_usb_ids()
         return cls._instance
 
     @staticmethod
@@ -65,7 +63,7 @@ class USBInfo:
                 USBInfo.usb_vendors[vid] = ln[6:]
                 continue
             if ln[0] == '\t' and USBInfo.is_hex_digit(ln[1:3]):
-                # usb.ids has a device id of 01xy, sigh
+                # usb.ids has a.stat device id of 01xy, sigh
                 if ln[3:5] == "xy":
                     did = int(ln[1:3], 16) * 256
                 else:

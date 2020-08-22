@@ -2,19 +2,21 @@
 from collections import UserDict
 import os
 import glob
-import pprint
 
 
 class PCIInfo:
     _instance = None
+    pci_data = {}
 
     def __new__(cls, *args, **kwargs):
-        if not getattr(cls, '_instance'):
+        if getattr(cls, '_instance') is None:
             cls._instance = super(PCIInfo, cls).__new__(cls, *args, **kwargs)
+            cls._init()
         return cls._instance
 
-    def __init__(self):
-        self.pci_data = {}
+    @staticmethod
+    def _init():
+        PCIInfo.pci_data = {}
         with open('/usr/share/hwdata/pci.ids')as fp:
             lines = fp.readlines()
             for line in lines:
@@ -27,16 +29,16 @@ class PCIInfo:
                     except ValueError:
                         sub_device, subsystem_name = line.split(maxsplit=1)
                         sub_vendor = vendor_id
-                    if sub_vendor not in self.pci_data[vendor_id]['subsystem']:
-                        self.pci_data[vendor_id]['subsystem'][sub_vendor] = {}
-                    self.pci_data[vendor_id]['subsystem'][sub_vendor][sub_device] = subsystem_name
+                    if sub_vendor not in PCIInfo.pci_data[vendor_id]['subsystem']:
+                        PCIInfo.pci_data[vendor_id]['subsystem'][sub_vendor] = {}
+                    PCIInfo.pci_data[vendor_id]['subsystem'][sub_vendor][sub_device] = subsystem_name
                 elif line[:1] == '\t':
                     device_id, device_name = line.split(maxsplit=1)
-                    self.pci_data[vendor_id]['device'][device_id] = device_name.strip()
+                    PCIInfo.pci_data[vendor_id]['device'][device_id] = device_name.strip()
                 else:
                     vendor_id, vendor_name = line.split(maxsplit=1)
-                    if vendor_id not in self.pci_data:
-                        self.pci_data[vendor_id] = {'name': vendor_name.strip(),
+                    if vendor_id not in PCIInfo.pci_data:
+                        PCIInfo.pci_data[vendor_id] = {'name': vendor_name.strip(),
                                                     'device': {},
                                                     'subsystem': {}}
 
@@ -52,11 +54,70 @@ class PCIInfo:
         return vendor_name, device_name, subsystem_name
 
 
+class ModuleAlias:
+    _instance = None
+    data = {}
+
+    def __new__(cls, *args, **kwargs):
+        if getattr(cls, '_instance') is None:
+            cls._instance = super(ModuleAlias, cls).__new__(cls, *args, **kwargs)
+            cls._init()
+        return cls._instance
+
+    @staticmethod
+    def _init():
+        ModuleAlias._module_alias_path = os.path.join('/lib/modules', os.uname().release, 'modules.alias')
+        if not os.path.exists(ModuleAlias._module_alias_path):
+            ModuleAlias._module_alias_path = None
+            ModuleAlias.data = []
+        else:
+            with open(ModuleAlias._module_alias_path)as fp:
+                ModuleAlias.data = fp.readlines()
+
+    def find(self, module_alias: str):
+        modules = []
+        for line in self.data:
+            if line.startswith('#'):
+                continue
+            if not self.type_match(line, module_alias):
+                continue
+            _pattern, _module_name = self._parse(line)
+            if self.match(module_alias, _pattern):
+                if _module_name not in modules:
+                    modules.append(_module_name)
+        return modules
+
+    @staticmethod
+    def type_match(line, pattern):
+        if line[6:].startswith(pattern.split(':')[0]):
+            return True
+        return False
+
+    @staticmethod
+    def _parse(line):
+        data = line.split()
+        _pattern, _module_name = None, None
+        if data.__len__() > 3:
+            _pattern = ''.join(data[1:-1])
+            _module_name = data[-1]
+        else:
+            _, _pattern, _module_name = data
+        return _pattern, _module_name
+
+    @staticmethod
+    def match(string: str, pattern: str):
+        if string == pattern:
+            return True
+        for pat in pattern.split('*'):
+            if pat not in string:
+                return False
+        return True
+
+
 class PCIDevice(UserDict):
     def __init__(self, dev_path: str, *args, **kwargs):
         super(PCIDevice, self).__init__(*args, **kwargs)
         self.info = PCIInfo()
-        self._prefix = '/sys/bus/pci/devices'
         self.dev_path = dev_path
         self.domain, self.bus, device = dev_path.split(':')
         # PCI domain, bus number
@@ -95,6 +156,7 @@ class PCIDevice(UserDict):
                 # GT/s
                 'max_link_width'
                 ]
+        m = ModuleAlias()
         for k in keys:
             self.__setitem__(k, self.read_attr(k))
         self.driver = self.read_driver()
@@ -106,7 +168,7 @@ class PCIDevice(UserDict):
         self.sub_name = ' '.join(self.info.find(self.subsystem_vendor[2:],
                                                 self.subsystem_device[2:])
                                  )
-        self.modules = self.find_modules()
+        self.modules = m.find(self.modalias)
         self.dev_type_name, self.dev_type = self.get_dev_type()
         self.devices = self.get_dev()
 
@@ -125,7 +187,7 @@ class PCIDevice(UserDict):
             dev_pat = dev_pats.get(dt, None)
             if dev_pat is not None:
                 for pat in dev_pat:
-                    interface_path = os.path.join(self._prefix, self.dev_path, pat)
+                    interface_path = os.path.join(self.dev_path, pat)
                     for i in glob.glob(interface_path):
                         if os.path.islink(i):
                             i = os.readlink(i)
@@ -174,37 +236,15 @@ class PCIDevice(UserDict):
                 dev_types.append(type_num)
         return dev_type_name, dev_types
 
-    def find_modules(self):
-        _, data = self.modalias.split(':v', 1)
-        v, data = data.split('d', 1)
-        d, data = data.split('sv', 1)
-        sv, data = data.split('sd', 1)
-        # sub vendor
-        sd, data = data.split('bc', 1)
-        # sub device
-        bc, data = data.split('sc', 1)
-        # base class
-        sc, data = data.split('i', 1)
-        # sub class
-        i = data
-        modules = []
-        with open(os.path.join('/lib/modules', os.uname().release, 'modules.alias'))as fp:
-            for line in fp:
-                if 'v' + v in line and 'bc' + bc in line and 'sc' + sc in line and 'i' + i in line:
-                    module = line.split()[-1]
-                    if module not in modules:
-                        modules.append(module)
-        return modules
-
     def read_driver(self) -> str:
-        driver_path = os.path.join(self._prefix, self.dev_path, 'driver')
+        driver_path = os.path.join(self.dev_path, 'driver')
         if os.path.exists(driver_path):
             return os.path.basename(os.readlink(driver_path))
         return ''
 
     def read_attr(self, name: str, path=None):
         if path is None:
-            path = os.path.join(self._prefix, self.dev_path, name)
+            path = os.path.join(self.dev_path, name)
         else:
             path = os.path.join(path, name)
         if not os.path.exists(path):
@@ -250,8 +290,9 @@ def find_pci():
     pci_devices = glob.glob('/sys/bus/pci/devices/*')
     print(pci_devices.__len__())
     for pci_path in pci_devices:
-        pci = PCIDevice(pci_path.split('/')[-1])
-        print(pci.__repr__())
+        pci = PCIDevice(pci_path)
+        print(pci)
 
 
-find_pci()
+if __name__ == '__main__':
+    find_pci()
