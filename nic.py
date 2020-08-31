@@ -356,33 +356,53 @@ class IfReq(ctypes.Structure):
     ]
 
 
-class Ifconfig(ctypes.Structure):
-    _pack_ = 1
+class IfConf(ctypes.Structure):
+    data_len = 40
     _fields_ = [
-        ('ifc_len', ctypes.c_int),
-        ('ifc_buf', ctypes.POINTER(IfReq)),
+        ('len', ctypes.c_int),
+        ('data', ctypes.c_char_p)
     ]
+
+    def items(self):
+        interface = []
+        data = ctypes.cast(self.data, ctypes.c_char_p).value
+        for i in range(self.len // self.data_len):
+            interface.append(data[i*self.data_len: (i + 1) * self.data_len][:16].strip(b'\0').decode())
+        return interface
 
 
 class Ethtool(object):
 
     def __init__(self, name=None):
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_IP)
+        self.name = name
         self.if_name = None
         self.if_req = None
 
         if name is not None:
             self._change_name(name)
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.__del__()
+
+    def __del__(self):
+        self.sock.close()
+
     def _change_name(self, name):
+        self.name = name
         self.if_name = bytearray(name, 'utf-8')
         self.if_name.extend(b"\0" * (IFNAMSIZ - len(self.if_name)))
         self.if_req = IfReq()
         self.if_req.ifr_name = (ctypes.c_uint8 * IFNAMSIZ)(*self.if_name)
 
-    def ioctl(self, command=SIOCETHTOOL):
+    def ioctl(self, command=SIOCETHTOOL, request=None):
+        if request is None:
+            request = self.if_req
         try:
-            if fcntl.ioctl(self.sock, command, self.if_req):
+            if fcntl.ioctl(self.sock, command, request):
                 raise OSError('NotSupported: {}'.format(self.if_name.decode("utf-8")))
         except OSError as e:
             if e.errno == errno.ENOTSUP:
@@ -439,9 +459,8 @@ class Ethtool(object):
                               'is_requested': cmd.features[feature_i].requested & flag_bit != 0,
                               'is_never_changed': cmd.features[feature_i].never_changed & flag_bit != 0}
             return data
-        except OSError as error:
-            print(error)
-            return {}
+        except OSError:
+            return None
 
     def get_link_settings(self):
         ecmd = LinkSettings()
@@ -458,8 +477,7 @@ class Ethtool(object):
                     ecmd.cmd != ETHTOOL_GLINKSETTINGS:
                 raise Exception('NotSupported')
             return ecmd.items()
-        except OSError as error:
-            print(error)
+        except OSError:
             return {}
 
     def get_wol(self):
@@ -468,9 +486,8 @@ class Ethtool(object):
         try:
             self.ioctl()
             return cmd.items()
-        except OSError as error:
-            print(error)
-            return {}
+        except OSError:
+            return None
 
     def get_coalesce(self):
         cmd = Coalesce(cmd=ETHTOOL_GCOALESCE)
@@ -478,9 +495,8 @@ class Ethtool(object):
         try:
             self.ioctl()
             return cmd.items()
-        except OSError as error:
-            print(error)
-            return {}
+        except OSError:
+            return None
 
     def if_link(self):
         cmd = Linked(cmd=ETHTOOL_GLINK)
@@ -488,9 +504,8 @@ class Ethtool(object):
         try:
             self.ioctl()
             return cmd.state
-        except OSError as error:
-            print(error)
-            return {}
+        except OSError:
+            return None
 
     @property
     def info(self):
@@ -517,12 +532,57 @@ class Ethtool(object):
                 data['mask'] = ''
         return data
 
+    def active_interface(self, max_dev=8):
+        request = IfConf(len=IfConf.data_len * max_dev)
+        data = ctypes.c_char_p
+        data.value = b'\0' * max_dev * IfConf.data_len
+        request.data = data.value
+        self.ioctl(command=SIOCGIFCONF, request=request)
+        return request.items()
+
+    def __str__(self):
+        wol = self.get_wol()
+        if_linked = self.if_link()
+        settings = self.get_link_settings()
+        speed = settings.get('speed')
+        duplex = settings.get('duplex')
+        autoneg = settings.get('autoneg')
+        supported_ports = settings.get('supported_ports')
+        supported_modes = settings.get('supported_modes')
+        transceiver = settings.get('transceiver')
+        phy_address = settings.get('phy_address')
+        port = settings.get('port')
+        strings = '{}:\n\tSupported Ports: {}' \
+                  '\n\tSupported modes: {}' \
+                  '\n\tAutoneg: {}' \
+                  '\n\tSpeed: {}' \
+                  '\n\tDuplex: {}' \
+                  '\n\tPort: {}' \
+                  '\n\tPhy Address: {}' \
+                  '\n\tTransceiver: {}' \
+                  '\n\tWake on: {}' \
+                  '\n\tLink detected: {}' \
+                  '\n\taddr: {}'.\
+            format(self.name,
+                   supported_ports,
+                   supported_modes,
+                   autoneg,
+                   speed,
+                   duplex,
+                   port,
+                   phy_address,
+                   transceiver,
+                   wol,
+                   if_linked,
+                   self.info)
+        return strings
+
 
 if __name__ == '__main__':
-    inc = Ethtool('wlp2s0')
-    print(inc.get_wol())
-    print(inc.get_coalesce())
-    print(inc.get_features())
-    print(inc.get_link_settings())
-    print(inc.if_link())
-    print(inc.info)
+    import glob
+    import os
+    for if_name in glob.glob('/sys/class/net/*'):
+        eth_name = os.path.basename(if_name)
+        with Ethtool(eth_name)as eth:
+            if eth_name in eth.active_interface():
+                print(eth)
