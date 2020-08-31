@@ -89,13 +89,11 @@ LinkModeBits = (
     LinkModeBit(bit_index=57, name='100000baseKR2/Full', type=LMBTypeMode),
     LinkModeBit(bit_index=58, name='100000baseSR2/Full', type=LMBTypeMode),
     LinkModeBit(bit_index=59, name='100000baseCR2/Full', type=LMBTypeMode),
-    LinkModeBit(bit_index=60, name='100000baseLR2_ER2_FR2/Full',
-                type=LMBTypeMode),
+    LinkModeBit(bit_index=60, name='100000baseLR2_ER2_FR2/Full', type=LMBTypeMode),
     LinkModeBit(bit_index=61, name='100000baseDR2/Full', type=LMBTypeMode),
     LinkModeBit(bit_index=62, name='200000baseKR4/Full', type=LMBTypeMode),
     LinkModeBit(bit_index=63, name='200000baseSR4/Full', type=LMBTypeMode),
-    LinkModeBit(bit_index=64, name='200000baseLR4_ER4_FR4/Full',
-                type=LMBTypeMode),
+    LinkModeBit(bit_index=64, name='200000baseLR4_ER4_FR4/Full', type=LMBTypeMode),
     LinkModeBit(bit_index=65, name='200000baseDR4/Full', type=LMBTypeMode),
     LinkModeBit(bit_index=66, name='200000baseCR4/Full', type=LMBTypeMode),
     LinkModeBit(bit_index=67, name='100baseT1/Full', type=LMBTypeMode),
@@ -301,8 +299,6 @@ class WolInfo(ctypes.Structure):
         WAKE_MAGICSECURE: "magic_secure",
         WAKE_FILTER: "filter",
     }
-    EthtoolBitsetBit = collections.namedtuple('EthtoolBitsetBit',
-                                              ('index', 'name', 'enable', 'set'))
     _fields_ = [
         ("cmd", ctypes.c_uint32),
         ("supported", ctypes.c_uint32),
@@ -314,10 +310,8 @@ class WolInfo(ctypes.Structure):
         dict_wol_modes = {}
         for bit_index, name in self.WAKE_NAMES.items():
             if self.supported & bit_index:
-                dict_wol_modes[name] = self.EthtoolBitsetBit(
-                    bit_index, name,
-                    self.wolopts & bit_index != 0, set=None)
-        return {'mode': dict_wol_modes, 'sopass': None}
+                dict_wol_modes[name] = {'index': bit_index, 'enable': self.wolopts & bit_index != 0}
+        return dict_wol_modes
 
 
 class Linked(ctypes.Structure):
@@ -584,5 +578,5 @@ if __name__ == '__main__':
     for if_name in glob.glob('/sys/class/net/*'):
         eth_name = os.path.basename(if_name)
         with Ethtool(eth_name)as eth:
-            if eth_name in eth.active_interface():
+            #if eth_name in eth.active_interface():
                 print(eth)
