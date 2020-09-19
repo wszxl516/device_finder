@@ -6,3 +6,5 @@ get all of pci info
 get all block info
 # kbd.py
 read from keyboard
+# mice.py
+read from mice
