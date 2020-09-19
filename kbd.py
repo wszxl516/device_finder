@@ -4,7 +4,6 @@ import sys
 import glob
 from collections import namedtuple
 import termios
-import getpass
 # /usr/include/linux/input-event-codes.h
 event = {
     0x00: 'RELEASED',
