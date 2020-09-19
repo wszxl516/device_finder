@@ -1,4 +1,8 @@
 # usb.py
-show all of usb info
-# pci
-show all of pci info
+get all of usb info
+# pci.py
+get all of pci info
+# blk.py
+get all block info
+# kbd.py
+read from keyboard

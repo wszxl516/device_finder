@@ -41,6 +41,7 @@ class BlockDevice(UserDict):
         self.__setitem__('module', module.find(self.modalias))
         self.__setitem__('stat', self.stat_parse())
         self.__setitem__('id', self.parse_wwn())
+        self.__setitem__('name', self.dev_name)
         self.part_parse()
 
     def __getattr__(self, item):
@@ -159,4 +160,4 @@ class BlockDevice(UserDict):
 
 if __name__ == '__main__':
     for blk_path in glob.glob('/sys/block/*'):
-        pprint.pprint(BlockDevice(blk_path))
+        pprint.pprint(BlockDevice(blk_path).data)
