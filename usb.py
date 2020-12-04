@@ -16,6 +16,7 @@ class USBInfo:
         "/usr/share/usb.ids",
         "/usr/share/libosinfo/usb.ids",
         "/usr/share/kcmusb/usb.ids",
+        '/var/lib/usbutils/usb.ids'
     ]
     usb_vendors = {}
     usb_products = {}

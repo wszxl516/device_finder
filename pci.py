@@ -17,30 +17,33 @@ class PCIInfo:
     @staticmethod
     def _init():
         PCIInfo.pci_data = {}
-        with open('/usr/share/hwdata/pci.ids')as fp:
-            lines = fp.readlines()
-            for line in lines:
-                line = line.strip('\n')
-                if line.startswith('#') or not line.strip():
-                    continue
-                elif line[:2] == '\t\t':
-                    try:
-                        sub_vendor, sub_device, subsystem_name = line.split(maxsplit=2)
-                    except ValueError:
-                        sub_device, subsystem_name = line.split(maxsplit=1)
-                        sub_vendor = vendor_id
-                    if sub_vendor not in PCIInfo.pci_data[vendor_id]['subsystem']:
-                        PCIInfo.pci_data[vendor_id]['subsystem'][sub_vendor] = {}
-                    PCIInfo.pci_data[vendor_id]['subsystem'][sub_vendor][sub_device] = subsystem_name
-                elif line[:1] == '\t':
-                    device_id, device_name = line.split(maxsplit=1)
-                    PCIInfo.pci_data[vendor_id]['device'][device_id] = device_name.strip()
-                else:
-                    vendor_id, vendor_name = line.split(maxsplit=1)
-                    if vendor_id not in PCIInfo.pci_data:
-                        PCIInfo.pci_data[vendor_id] = {'name': vendor_name.strip(),
-                                                    'device': {},
-                                                    'subsystem': {}}
+        for ids in ['/usr/share/misc/pci.ids', '/usr/share/hwdata/pci.ids']:
+            if not os.path.exists(ids):
+                continue
+            with open(ids)as fp:
+                lines = fp.readlines()
+                for line in lines:
+                    line = line.strip('\n')
+                    if line.startswith('#') or not line.strip():
+                        continue
+                    elif line[:2] == '\t\t':
+                        try:
+                            sub_vendor, sub_device, subsystem_name = line.split(maxsplit=2)
+                        except ValueError:
+                            sub_device, subsystem_name = line.split(maxsplit=1)
+                            sub_vendor = vendor_id
+                        if sub_vendor not in PCIInfo.pci_data[vendor_id]['subsystem']:
+                            PCIInfo.pci_data[vendor_id]['subsystem'][sub_vendor] = {}
+                        PCIInfo.pci_data[vendor_id]['subsystem'][sub_vendor][sub_device] = subsystem_name
+                    elif line[:1] == '\t':
+                        device_id, device_name = line.split(maxsplit=1)
+                        PCIInfo.pci_data[vendor_id]['device'][device_id] = device_name.strip()
+                    else:
+                        vendor_id, vendor_name = line.split(maxsplit=1)
+                        if vendor_id not in PCIInfo.pci_data:
+                            PCIInfo.pci_data[vendor_id] = {'name': vendor_name.strip(),
+                                                           'device': {},
+                                                           'subsystem': {}}
 
     def find(self, vendor_id, device_id, sub_vendor=None, sub_device=None):
         vendor_data = self.pci_data.get(vendor_id, {})
@@ -198,38 +201,38 @@ class PCIDevice(UserDict):
 
     def get_dev_type(self):
         types = {
-                '00': '',
-                # 'Unclassified device'
-                '01': 'Mass storage controller',
-                '02': 'Network controller',
-                '03': 'Display controller',
-                '04': 'Multimedia controller',
-                '05': 'Memory controller',
-                '06': 'Bridge',
-                '07': 'Communication controller',
-                '08': 'Generic system peripheral',
-                '09': 'Input device controller',
-                '0a': 'Docking station',
-                '0b': 'Processor',
-                '0c': 'Serial bus controller',
-                '0d': 'Wireless controller',
-                '0e': 'Intelligent controller',
-                '0f': 'Satellite communications controller',
-                '10': 'Encryption controller',
-                '11': 'Signal processing controller',
-                '12': 'Processing accelerators',
-                '13': 'Non-Essential Instrumentation',
-                '15': '',
-                '40': 'Coprocessor',
-                '64': '',
-                'ff': ''
-                # 'Unassigned class'
+            '00': '',
+            # 'Unclassified device'
+            '01': 'Mass storage controller',
+            '02': 'Network controller',
+            '03': 'Display controller',
+            '04': 'Multimedia controller',
+            '05': 'Memory controller',
+            '06': 'Bridge',
+            '07': 'Communication controller',
+            '08': 'Generic system peripheral',
+            '09': 'Input device controller',
+            '0a': 'Docking station',
+            '0b': 'Processor',
+            '0c': 'Serial bus controller',
+            '0d': 'Wireless controller',
+            '0e': 'Intelligent controller',
+            '0f': 'Satellite communications controller',
+            '10': 'Encryption controller',
+            '11': 'Signal processing controller',
+            '12': 'Processing accelerators',
+            '13': 'Non-Essential Instrumentation',
+            '15': '',
+            '40': 'Coprocessor',
+            '64': '',
+            'ff': ''
+            # 'Unassigned class'
         }
         class_type = self.get('class')[2:]
         dev_type_name = []
         dev_types = []
         for t in range(0, class_type.__len__(), 2):
-            type_num = class_type[t:t+2]
+            type_num = class_type[t:t + 2]
             dev_type = types.get(type_num, '')
             if dev_type != '' and dev_type not in dev_type_name:
                 dev_type_name.append(dev_type)
